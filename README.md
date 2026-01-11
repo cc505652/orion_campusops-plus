@@ -153,7 +153,9 @@ src/
 
 🚀 Deployment (Firebase Hosting)
 Build
+
 npm install
+
 npm run build
 
 Deploy
@@ -161,8 +163,11 @@ firebase deploy --only hosting
 
 🚀 Deployment (Firebase Hosting)
 Build
+
 npm install
+
 npm run build
 
 Deploy
+
 firebase deploy --only hosting
