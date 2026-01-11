@@ -41,7 +41,8 @@ export default function IssueList() {
           ...doc.data()
         }));
 
-        setIssues(data);
+        // ✅ NEW: hide deleted issues from students
+        setIssues(data.filter((i) => !i.isDeleted));
       });
 
       return () => unsubscribeSnapshot();
@@ -68,27 +69,9 @@ export default function IssueList() {
   });
 
   return (
-    <div>
-      <h2 style={{ marginBottom: '2rem', color: 'var(--primary)' }}>My Issues</h2>
+    <div style={{ padding: 16 }}>
+      <h2>My Issues</h2>
 
-<<<<<<< HEAD
-      {issues.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No issues yet.</p>}
-
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
-        gap: '1.5rem' 
-      }}>
-        {issues.map(issue => (
-          <div key={issue.id} className="glass-panel" style={{ padding: '1.5rem' }}>
-            <h4 style={{ marginTop: 0, marginBottom: '0.5rem' }}>{issue.title}</h4>
-            <p style={{ margin: '0.5rem 0', color: 'var(--text-muted)' }}>Status: <span style={{ color: 'var(--primary)' }}>{issue.status}</span></p>
-            {issue.category && <p style={{ margin: '0.5rem 0', color: 'var(--text-muted)' }}>Category: {issue.category}</p>}
-            {issue.urgency && <p style={{ margin: '0.5rem 0', color: 'var(--text-muted)' }}>Urgency: {issue.urgency}</p>}
-          </div>
-        ))}
-      </div>
-=======
       <div style={{ marginBottom: 12 }}>
         <label style={{ marginRight: 8 }}>Sort:</label>
         <select value={sortMode} onChange={(e) => setSortMode(e.target.value)}>
@@ -105,8 +88,8 @@ export default function IssueList() {
           style={{
             border: "1px solid #ccc",
             margin: 10,
-            padding: 10,
-            borderRadius: 8
+            padding: 12,
+            borderRadius: 10
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
@@ -132,11 +115,10 @@ export default function IssueList() {
             <span>📌 Category: <b>{issue.category || "—"}</b></span>
             <span>⚡ Urgency: <b>{issue.urgency || "—"}</b></span>
             <span>📍 Location: <b>{issue.location || "—"}</b></span>
-            {/* ✅ NEW */}
             <span>👷 Assigned To: <b>{assignedLabel(issue.assignedTo)}</b></span>
           </div>
 
-          {/* optional debug field */}
+          {/* optional debug field - keep/remove as you want */}
           {issue.autoReason && (
             <p style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
               🤖 Auto-tagging: {issue.autoReason}
@@ -144,7 +126,6 @@ export default function IssueList() {
           )}
         </div>
       ))}
->>>>>>> 69c8893 (Initial commit)
     </div>
   );
 }

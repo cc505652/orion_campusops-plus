@@ -57,14 +57,17 @@ function staffLabel(v) {
 export default function AdminIssueList() {
   const [issues, setIssues] = useState([]);
 
+  // filters
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterUrgency, setFilterUrgency] = useState("all");
-
-  // ✅ NEW assignment filters
   const [filterAssignedTo, setFilterAssignedTo] = useState("all"); // all | unassigned | plumber...
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
 
+  // deleted visibility
+  const [showDeleted, setShowDeleted] = useState(false);
+
+  // AI summary
   const [aiSummary, setAiSummary] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -102,13 +105,13 @@ export default function AdminIssueList() {
     });
   };
 
-  /* ---------- ASSIGNMENT (NEW) ---------- */
+  /* ---------- STAFF ASSIGN ---------- */
   const assignIssue = async (issue, assignedToValue) => {
     const user = auth.currentUser;
 
     await updateDoc(doc(db, "issues", issue.id), {
       assignedTo: assignedToValue,
-      status: "assigned", // ✅ auto move to assigned
+      status: "assigned",
       assignedAt: serverTimestamp(),
       assignedBy: user?.uid || null,
       statusHistory: [
@@ -123,9 +126,35 @@ export default function AdminIssueList() {
     });
   };
 
+  /* ---------- DELETE COMPLETED (SOFT DELETE) ---------- */
+  const deleteResolvedIssue = async (issue) => {
+    const ok = window.confirm(`Delete resolved issue?\n\n"${issue.title}"`);
+    if (!ok) return;
+
+    const user = auth.currentUser;
+
+    await updateDoc(doc(db, "issues", issue.id), {
+      isDeleted: true,
+      deletedAt: serverTimestamp(),
+      deletedBy: user?.uid || null,
+      statusHistory: [
+        ...(issue.statusHistory || []),
+        {
+          status: "deleted",
+          at: Timestamp.now(),
+          note: "Deleted by admin"
+        }
+      ],
+      updatedAt: serverTimestamp()
+    });
+  };
+
   /* ---------- FILTER + SORT ---------- */
   const filtered = useMemo(() => {
     return issues.filter((i) => {
+      // hide deleted unless toggled
+      if (!showDeleted && i.isDeleted) return false;
+
       // base filters
       const okStatus = filterStatus === "all" || i.status === filterStatus;
       const okCat = filterCategory === "all" || i.category === filterCategory;
@@ -141,7 +170,15 @@ export default function AdminIssueList() {
 
       return okStatus && okCat && okUrg && okAssigned && okUnassignedToggle;
     });
-  }, [issues, filterStatus, filterCategory, filterUrgency, filterAssignedTo, onlyUnassigned]);
+  }, [
+    issues,
+    filterStatus,
+    filterCategory,
+    filterUrgency,
+    filterAssignedTo,
+    onlyUnassigned,
+    showDeleted
+  ]);
 
   const sortedIssues = [...filtered].sort((a, b) => {
     const slaDiff = attentionOrder[getSlaFlag(a)] - attentionOrder[getSlaFlag(b)];
@@ -157,24 +194,29 @@ export default function AdminIssueList() {
   });
 
   /* ---------- HEATMAP ---------- */
-  const hostelCounts = issues.reduce((acc, i) => {
-    acc[i.location] = (acc[i.location] || 0) + 1;
-    return acc;
-  }, {});
+  const hostelCounts = useMemo(() => {
+    return issues.reduce((acc, i) => {
+      if (i.isDeleted) return acc; // exclude deleted from heatmap
+      acc[i.location] = (acc[i.location] || 0) + 1;
+      return acc;
+    }, {});
+  }, [issues]);
 
   /* ---------- AI SUMMARY ---------- */
   const generateWeeklySummary = async () => {
     try {
       setAiLoading(true);
 
-      const payload = issues.map((i) => ({
-        title: i.title,
-        category: i.category,
-        location: i.location,
-        urgency: i.urgency,
-        status: i.status,
-        assignedTo: i.assignedTo || null
-      }));
+      const payload = issues
+        .filter((i) => !i.isDeleted)
+        .map((i) => ({
+          title: i.title,
+          category: i.category,
+          location: i.location,
+          urgency: i.urgency,
+          status: i.status,
+          assignedTo: i.assignedTo || null
+        }));
 
       const fakeSummary = `
 Top issues: Water and Electricity.
@@ -191,40 +233,34 @@ Assignment distribution shows workload balancing opportunities.
     }
   };
 
+  /* ---------- UI ---------- */
   return (
-    <div>
-      <h2 style={{ marginBottom: '2rem', color: 'var(--primary)' }}>Admin Dashboard</h2>
+    <div style={{ padding: 16 }}>
+      <h2 style={{ marginBottom: 16 }}>Admin Dashboard</h2>
 
-<<<<<<< HEAD
       {/* AI SUMMARY */}
-      <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-        <button onClick={generateWeeklySummary} disabled={aiLoading} className="btn-primary" style={{ marginBottom: '1rem' }}>
-          {aiLoading ? 'Generating...' : 'Generate Weekly Summary'}
+      <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10, marginBottom: 16 }}>
+        <button onClick={generateWeeklySummary} disabled={aiLoading}>
+          {aiLoading ? "Generating..." : "Generate Weekly Summary"}
         </button>
-=======
-      <button onClick={generateWeeklySummary} disabled={aiLoading}>
-        {aiLoading ? "Generating..." : "Generate Weekly Summary"}
-      </button>
->>>>>>> 69c8893 (Initial commit)
 
         {aiSummary && (
-          <div>
-            <strong style={{ color: 'var(--primary)' }}>Weekly Summary</strong>
-            <p style={{ marginTop: '0.5rem', whiteSpace: 'pre-line' }}>{aiSummary}</p>
+          <div style={{ marginTop: 10 }}>
+            <strong>Weekly Summary</strong>
+            <p style={{ marginTop: 6, whiteSpace: "pre-line" }}>{aiSummary}</p>
           </div>
         )}
       </div>
 
-<<<<<<< HEAD
       {/* HEATMAP */}
-      <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-        <h3 style={{ marginTop: 0, color: 'var(--primary)' }}>Issue Distribution</h3>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10, marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Issue Distribution</h3>
+        <table border="1" cellPadding="6" style={{ width: "100%" }}>
           <tbody>
             {Object.entries(hostelCounts).map(([k, v]) => (
               <tr key={k}>
-                <td style={{ padding: '8px', borderBottom: '1px solid var(--glass-border)' }}>{k}</td>
-                <td style={{ padding: '8px', borderBottom: '1px solid var(--glass-border)' }}>{v}</td>
+                <td>{k}</td>
+                <td>{v}</td>
               </tr>
             ))}
           </tbody>
@@ -232,220 +268,150 @@ Assignment distribution shows workload balancing opportunities.
       </div>
 
       {/* FILTERS */}
-      <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <select onChange={e => setFilterStatus(e.target.value)} style={{ flex: 1, minWidth: '150px' }}>
+      <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <select onChange={(e) => setFilterStatus(e.target.value)} value={filterStatus}>
             <option value="all">All Status</option>
             <option value="open">Open</option>
             <option value="assigned">Assigned</option>
+            <option value="in_progress">In Progress</option>
             <option value="resolved">Resolved</option>
           </select>
 
-          <select onChange={e => setFilterCategory(e.target.value)} style={{ flex: 1, minWidth: '150px' }}>
+          <select onChange={(e) => setFilterCategory(e.target.value)} value={filterCategory}>
             <option value="all">All Categories</option>
             <option value="water">Water</option>
             <option value="electricity">Electricity</option>
             <option value="wifi">Wi-Fi</option>
             <option value="mess">Mess</option>
             <option value="maintenance">Maintenance</option>
+            <option value="other">Other</option>
           </select>
+
+          <select onChange={(e) => setFilterUrgency(e.target.value)} value={filterUrgency}>
+            <option value="all">All Urgency</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+
+          <select onChange={(e) => setFilterAssignedTo(e.target.value)} value={filterAssignedTo}>
+            <option value="all">All Assigned</option>
+            <option value="unassigned">Unassigned Only</option>
+            {STAFF_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={onlyUnassigned}
+              onChange={(e) => setOnlyUnassigned(e.target.checked)}
+            />
+            Show only unassigned
+          </label>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={showDeleted}
+              onChange={(e) => setShowDeleted(e.target.checked)}
+            />
+            Show deleted
+          </label>
         </div>
       </div>
 
-      {/* ISSUES */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', 
-        gap: '1.5rem' 
-      }}>
-        {sortedIssues.map(issue => {
+      {/* ISSUES GRID */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 14 }}>
+        {sortedIssues.map((issue) => {
           const sla = getSlaFlag(issue);
+          const isUnassigned = !issue.assignedTo;
+
           return (
-            <div key={issue.id} className="glass-panel" style={{ padding: '1.5rem' }}>
-              <h4 style={{ marginTop: 0, marginBottom: '0.5rem' }}>{issue.title}</h4>
-              <span style={{
-                display: 'inline-block',
-                marginBottom: '0.5rem',
-                color: "#fff",
-                padding: "4px 8px",
-                borderRadius: '6px',
-                fontSize: '0.8rem',
-                background: sla === "overdue" ? "var(--danger)" :
-                            sla === "delayed" ? "var(--warning)" : "var(--success)"
-              }}>
-                {sla.toUpperCase()}
-              </span>
-              <p style={{ margin: '0.5rem 0', color: 'var(--text-muted)' }}>Status: <span style={{ color: 'var(--primary)' }}>{issue.status}</span></p>
-              <p style={{ margin: '0.5rem 0', color: 'var(--text-muted)' }}>Urgency: {issue.urgency}</p>
-              <p style={{ margin: '0.5rem 0', color: 'var(--text-muted)' }}>Location: {issue.location}</p>
-              <div style={{ marginTop: '1rem' }}>
-                {issue.status === "open" && (
-                  <button onClick={() => updateStatus(issue, "assigned")} className="btn-primary" style={{ width: '100%', marginBottom: '0.5rem' }}>Assign</button>
-                )}
+            <div
+              key={issue.id}
+              style={{ border: "1px solid #ddd", padding: 12, borderRadius: 12 }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <strong>{issue.title}</strong>
+                <span
+                  style={{
+                    color: "#fff",
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    background:
+                      sla === "overdue" ? "#d32f2f" : sla === "delayed" ? "#f57c00" : "#388e3c"
+                  }}
+                >
+                  {sla.toUpperCase()}
+                </span>
+              </div>
+
+              <p style={{ margin: "8px 0" }}>Status: <b>{issue.status}</b></p>
+              <p style={{ margin: "8px 0" }}>Category: <b>{issue.category}</b></p>
+              <p style={{ margin: "8px 0" }}>Urgency: <b>{issue.urgency}</b></p>
+              <p style={{ margin: "8px 0" }}>Location: <b>{issue.location}</b></p>
+
+              <p style={{ margin: "8px 0" }}>
+                Assigned To: <b>{staffLabel(issue.assignedTo)}</b>
+              </p>
+
+              {/* ASSIGN */}
+              {isUnassigned && issue.status === "open" && (
+                <div style={{ marginTop: 10 }}>
+                  <select
+                    defaultValue=""
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v) assignIssue(issue, v);
+                    }}
+                    style={{ width: "100%" }}
+                  >
+                    <option value="">Assign to...</option>
+                    {STAFF_OPTIONS.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* ACTIONS */}
+              <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {issue.status === "assigned" && (
-                  <button onClick={() => updateStatus(issue, "resolved")} className="btn-primary" style={{ width: '100%' }}>Resolve</button>
+                  <>
+                    <button onClick={() => updateStatus(issue, "in_progress")}>Start Work</button>
+                    <button onClick={() => updateStatus(issue, "resolved")}>Resolve</button>
+                  </>
+                )}
+
+                {issue.status === "in_progress" && (
+                  <button onClick={() => updateStatus(issue, "resolved")}>Resolve</button>
+                )}
+
+                {/* ✅ DELETE COMPLETED TASK */}
+                {issue.status === "resolved" && !issue.isDeleted && (
+                  <button
+                    onClick={() => deleteResolvedIssue(issue)}
+                    style={{ background: "#d32f2f", color: "#fff" }}
+                  >
+                    Delete
+                  </button>
+                )}
+
+                {issue.isDeleted && (
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>🗑 Deleted</span>
                 )}
               </div>
             </div>
           );
         })}
       </div>
-=======
-      <h3>Issue Distribution</h3>
-      <table border="1" cellPadding="6">
-        <tbody>
-          {Object.entries(hostelCounts).map(([k, v]) => (
-            <tr key={k}>
-              <td>{k}</td>
-              <td>{v}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {/* FILTERS */}
-      <div style={{ margin: "12px 0" }}>
-        <select onChange={(e) => setFilterStatus(e.target.value)} value={filterStatus}>
-          <option value="all">All Status</option>
-          <option value="open">Open</option>
-          <option value="assigned">Assigned</option>
-          <option value="in_progress">In Progress</option>
-          <option value="resolved">Resolved</option>
-        </select>
-
-        <select
-          onChange={(e) => setFilterCategory(e.target.value)}
-          value={filterCategory}
-          style={{ marginLeft: 8 }}
-        >
-          <option value="all">All Categories</option>
-          <option value="water">Water</option>
-          <option value="electricity">Electricity</option>
-          <option value="wifi">Wi-Fi</option>
-          <option value="mess">Mess</option>
-          <option value="maintenance">Maintenance</option>
-          <option value="other">Other</option>
-        </select>
-
-        <select
-          onChange={(e) => setFilterUrgency(e.target.value)}
-          value={filterUrgency}
-          style={{ marginLeft: 8 }}
-        >
-          <option value="all">All Urgency</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-
-        {/* ✅ Assignment filters */}
-        <select
-          onChange={(e) => setFilterAssignedTo(e.target.value)}
-          value={filterAssignedTo}
-          style={{ marginLeft: 8 }}
-        >
-          <option value="all">All Assigned</option>
-          <option value="unassigned">Unassigned Only</option>
-          {STAFF_OPTIONS.map((s) => (
-            <option key={s.value} value={s.value}>{s.label}</option>
-          ))}
-        </select>
-
-        <label style={{ marginLeft: 10 }}>
-          <input
-            type="checkbox"
-            checked={onlyUnassigned}
-            onChange={(e) => setOnlyUnassigned(e.target.checked)}
-          />{" "}
-          Show only unassigned
-        </label>
-      </div>
-
-      {/* ISSUES */}
-      {sortedIssues.map((issue) => {
-        const sla = getSlaFlag(issue);
-        const isUnassigned = !issue.assignedTo;
-
-        return (
-          <div
-            key={issue.id}
-            style={{ border: "1px solid #ddd", padding: 10, marginBottom: 8 }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <strong>{issue.title}</strong>
-              <span
-                style={{
-                  marginLeft: 8,
-                  color: "#fff",
-                  padding: "2px 6px",
-                  background:
-                    sla === "overdue"
-                      ? "#d32f2f"
-                      : sla === "delayed"
-                      ? "#f57c00"
-                      : "#388e3c"
-                }}
-              >
-                {sla.toUpperCase()}
-              </span>
-            </div>
-
-            <p>Status: {issue.status}</p>
-            <p>Category: {issue.category}</p>
-            <p>Urgency: {issue.urgency}</p>
-            <p>Location: {issue.location}</p>
-
-            <p>
-              Assigned To: <b>{staffLabel(issue.assignedTo)}</b>
-            </p>
-
-            {/* ✅ ASSIGN CONTROL */}
-            {isUnassigned && issue.status === "open" && (
-              <div style={{ marginTop: 10 }}>
-                <select
-                  defaultValue=""
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v) assignIssue(issue, v);
-                  }}
-                >
-                  <option value="">Assign to...</option>
-                  {STAFF_OPTIONS.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Actions */}
-            <div style={{ marginTop: 10 }}>
-              {/* keep your flow */}
-              {issue.status === "assigned" && (
-                <>
-                  <button onClick={() => updateStatus(issue, "in_progress")}>
-                    Start Work
-                  </button>
-                  <button
-                    onClick={() => updateStatus(issue, "resolved")}
-                    style={{ marginLeft: 8 }}
-                  >
-                    Resolve
-                  </button>
-                </>
-              )}
-
-              {issue.status === "in_progress" && (
-                <button onClick={() => updateStatus(issue, "resolved")}>
-                  Resolve
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
->>>>>>> 69c8893 (Initial commit)
     </div>
   );
 }
